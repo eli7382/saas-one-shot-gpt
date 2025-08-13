@@ -1,0 +1,272 @@
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["fullTextSearch"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  emailVerified   DateTime?
+  passwordHash    String?
+  name            String?
+  avatarUrl       String?
+  locale          String    @default("en")
+  theme           String    @default("system")
+  twoFactorSecret String?
+  accounts        Account[]
+  sessions        Session[]
+  memberships     Membership[]
+  notifications   Notification[]
+  auditLogs       AuditLog[] @relation("UserAuditLogs")
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  provider          String
+  providerAccountId String
+  type              String
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+  @@id([identifier, token])
+}
+
+model Organization {
+  id        String       @id @default(uuid())
+  name      String
+  ownerId   String
+  plan      Plan         @default(FREE)
+  createdAt DateTime     @default(now())
+  users     Membership[]
+  projects  Project[]
+  auditLogs AuditLog[]   @relation("OrgAuditLogs")
+  subscription Subscription?
+}
+
+model Membership {
+  id     String   @id @default(uuid())
+  userId String
+  orgId  String
+  role   Role
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  org  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId])
+}
+
+model Project {
+  id          String        @id @default(uuid())
+  orgId       String
+  name        String
+  key         String
+  description String?
+  createdBy   String
+  createdAt   DateTime      @default(now())
+  columns     BoardColumn[]
+  tasks       Task[]
+  org         Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+}
+
+model BoardColumn {
+  id        String   @id @default(uuid())
+  projectId String
+  name      String
+  "Stable ordering index (dense)"
+  order     Int
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks     Task[]
+  @@unique([projectId, order])
+}
+
+model Task {
+  id          String     @id @default(uuid())
+  projectId   String
+  columnId    String
+  title       String
+  description String?
+  priority    Priority   @default(MEDIUM)
+  status      String     @default("open")
+  dueAt       DateTime?
+  createdBy   String
+  order       Int        @default(0)
+  deletedAt   DateTime?
+  project     Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  column      BoardColumn @relation(fields: [columnId], references: [id], onDelete: SetNull)
+  assignees   TaskAssignee[]
+  labels      TaskLabelLink[]
+  checklists  Checklist[]
+  comments    Comment[]
+  attachments Attachment[]
+  @@index([projectId, columnId])
+  @@index([deletedAt])
+  @@fulltext([title, description])
+}
+
+model TaskAssignee {
+  taskId String
+  userId String
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@id([taskId, userId])
+}
+
+model TaskLabel {
+  id    String      @id @default(uuid())
+  orgId String
+  name  String
+  color String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  links TaskLabelLink[]
+  @@unique([orgId, name])
+}
+
+model TaskLabelLink {
+  taskId String
+  labelId String
+  task   Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  label  TaskLabel @relation(fields: [labelId], references: [id], onDelete: Cascade)
+  @@id([taskId, labelId])
+}
+
+model Checklist {
+  id     String    @id @default(uuid())
+  taskId String
+  title  String
+  items  ChecklistItem[]
+  task   Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+}
+
+model ChecklistItem {
+  id          String   @id @default(uuid())
+  checklistId String
+  text        String
+  done        Boolean  @default(false)
+  checklist   Checklist @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+}
+
+model Comment {
+  id               String   @id @default(uuid())
+  taskId           String
+  authorId         String
+  body             String
+  parentCommentId  String?
+  createdAt        DateTime @default(now())
+  task             Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author           User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  parent           Comment? @relation("CommentThread", fields: [parentCommentId], references: [id])
+  children         Comment[] @relation("CommentThread")
+  @@index([taskId, createdAt])
+  @@fulltext([body])
+}
+
+model Attachment {
+  id     String  @id @default(uuid())
+  taskId String
+  url    String
+  mime   String
+  size   Int
+  task   Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id      String   @id @default(uuid())
+  userId  String
+  type    String
+  payload Json
+  readAt  DateTime?
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, readAt])
+}
+
+model AuditLog {
+  id         String    @id @default(uuid())
+  orgId      String
+  actorId    String
+  action     String
+  entityType String
+  entityId   String
+  meta       Json
+  createdAt  DateTime  @default(now())
+  org        Organization @relation("OrgAuditLogs", fields: [orgId], references: [id], onDelete: Cascade)
+  actor      User        @relation("UserAuditLogs", fields: [actorId], references: [id], onDelete: SetNull)
+  @@index([orgId, createdAt])
+}
+
+model Subscription {
+  id                String       @id @default(uuid())
+  orgId             String       @unique
+  plan              Plan
+  status            String
+  currentPeriodEnd  DateTime
+  org               Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+}
+
+model ApiKey {
+  id        String   @id @default(uuid())
+  orgId     String
+  name      String
+  hashedKey String
+  scopes    String[]
+  lastUsedAt DateTime?
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+}
+
+model AnalyticsEvent {
+  id        String   @id @default(uuid())
+  orgId     String?
+  userId    String?
+  name      String
+  props     Json
+  createdAt DateTime @default(now())
+  @@index([name, createdAt])
+}
+
+enum Role {
+  Owner
+  Admin
+  Manager
+  Member
+  Viewer
+}
+
+enum Plan {
+  FREE
+  PRO
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+} 

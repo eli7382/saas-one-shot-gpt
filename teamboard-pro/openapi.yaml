@@ -1,0 +1,156 @@
+openapi: 3.1.0
+info:
+  title: TeamBoard Pro API
+  version: 1.0.0
+  description: REST API for TeamBoard Pro. All responses follow { ok, data?, error? } envelope.
+servers:
+  - url: https://localhost:3000/api
+paths:
+  /auth/2fa:
+    post:
+      summary: Enable/verify TOTP
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/TOTPRequest" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+  /orgs:
+    get:
+      summary: List organizations for current user
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EnvelopeArrayOrg" } } } } }
+    post:
+      summary: Create organization
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateOrg" } } } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EnvelopeOrg" } } } } }
+  /orgs/{orgId}/invites:
+    post:
+      summary: Invite user
+      parameters: [{ name: orgId, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/Invite" } } } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } } }
+  /projects:
+    get: { summary: List projects, responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EnvelopeArrayProject" } } } } } }
+    post:
+      summary: Create project
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateProject" } } } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EnvelopeProject" } } } } }
+  /projects/{projectId}/columns:
+    get:
+      summary: List columns
+      parameters: [{ name: projectId, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EnvelopeArrayColumn" } } } } }
+    post:
+      summary: Create column
+      parameters: [{ name: projectId, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateColumn" } } } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EnvelopeColumn" } } } } }
+  /tasks:
+    get: { summary: Query tasks, responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EnvelopeArrayTask" } } } } } }
+    post:
+      summary: Create task
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateTask" } } } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EnvelopeTask" } } } } }
+  /tasks/bulk:
+    post:
+      summary: Bulk update tasks (reorder/column move)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BulkTaskUpdate" } } } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } } }
+  /comments:
+    post:
+      summary: Create comment with @mentions
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateComment" } } } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EnvelopeComment" } } } } }
+  /notifications:
+    get: { summary: List notifications, responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EnvelopeArrayNotification" } } } } } }
+    put:
+      summary: Mark as read
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/MarkRead" } } } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } } }
+  /admin/metrics:
+    get:
+      summary: Metrics dashboard
+      parameters:
+        - name: range
+          in: query
+          schema: { type: string, enum: [7d,30d,90d] }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EnvelopeMetrics" } } } }
+  /billing/subscription:
+    get:
+      summary: Get org subscription
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EnvelopeSubscription" } } } } }
+  /billing/webhook:
+    post:
+      summary: Mock billing webhook
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } } }
+  /files:
+    post:
+      summary: Upload file (multipart)
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties: { file: { type: string, format: binary }, taskId: { type: string, format: uuid } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EnvelopeAttachment" } } } }
+  /search:
+    get:
+      summary: Full-text search across projects, tasks, comments
+      parameters: [{ in: query, name: q, schema: { type: string } }]
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EnvelopeSearch" } } } } }
+components:
+  schemas:
+    Envelope: { type: object, properties: { ok: { type: boolean }, error: { type: string, nullable: true } }, required: [ok] }
+    EnvelopeOrg: { allOf: [ { $ref: "#/components/schemas/Envelope" }, { type: object, properties: { data: { $ref: "#/components/schemas/Org" } } } ] }
+    EnvelopeArrayOrg: { allOf: [ { $ref: "#/components/schemas/Envelope" }, { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/Org" } } } } ] }
+    EnvelopeProject: { allOf: [ { $ref: "#/components/schemas/Envelope" }, { type: object, properties: { data: { $ref: "#/components/schemas/Project" } } } ] }
+    EnvelopeArrayProject: { allOf: [ { $ref: "#/components/schemas/Envelope" }, { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/Project" } } } } ] }
+    EnvelopeArrayColumn: { allOf: [ { $ref: "#/components/schemas/Envelope" }, { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/BoardColumn" } } } } ] }
+    EnvelopeColumn: { allOf: [ { $ref: "#/components/schemas/Envelope" }, { type: object, properties: { data: { $ref: "#/components/schemas/BoardColumn" } } } ] }
+    EnvelopeTask: { allOf: [ { $ref: "#/components/schemas/Envelope" }, { type: object, properties: { data: { $ref: "#/components/schemas/Task" } } } ] }
+    EnvelopeArrayTask: { allOf: [ { $ref: "#/components/schemas/Envelope" }, { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/Task" } } } } ] }
+    EnvelopeComment: { allOf: [ { $ref: "#/components/schemas/Envelope" }, { type: object, properties: { data: { $ref: "#/components/schemas/Comment" } } } ] }
+    EnvelopeArrayNotification: { allOf: [ { $ref: "#/components/schemas/Envelope" }, { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/Notification" } } } } ] }
+    EnvelopeMetrics: { allOf: [ { $ref: "#/components/schemas/Envelope" }, { type: object, properties: { data: { $ref: "#/components/schemas/Metrics" } } } ] }
+    EnvelopeSubscription: { allOf: [ { $ref: "#/components/schemas/Envelope" }, { type: object, properties: { data: { $ref: "#/components/schemas/Subscription" } } } ] }
+    EnvelopeAttachment: { allOf: [ { $ref: "#/components/schemas/Envelope" }, { type: object, properties: { data: { $ref: "#/components/schemas/Attachment" } } } ] }
+    EnvelopeSearch: { allOf: [ { $ref: "#/components/schemas/Envelope" }, { type: object, properties: { data: { type: object, properties: { tasks: { type: array, items: { $ref: "#/components/schemas/Task" } }, comments: { type: array, items: { $ref: "#/components/schemas/Comment" } } } } } } ] }
+    TOTPRequest: { type: object, properties: { action: { type: string, enum: [enable, verify] }, token: { type: string } }, required: [action] }
+    CreateOrg: { type: object, properties: { name: { type: string } }, required: [name] }
+    Invite: { type: object, properties: { email: { type: string, format: email }, role: { type: string, enum: [Owner,Admin,Manager,Member,Viewer] } }, required: [email, role] }
+    CreateProject: { type: object, properties: { orgId: { type: string, format: uuid }, name: { type: string }, key: { type: string } }, required: [orgId, name, key] }
+    CreateColumn: { type: object, properties: { name: { type: string }, order: { type: integer } }, required: [name] }
+    BulkTaskUpdate: { type: object, properties: { moves: { type: array, items: { type: object, properties: { taskId: { type: string, format: uuid }, columnId: { type: string, format: uuid }, order: { type: integer } }, required: [taskId, columnId, order] } } }, required: [moves] }
+    CreateTask:
+      type: object
+      properties:
+        projectId: { type: string, format: uuid }
+        columnId: { type: string, format: uuid }
+        title: { type: string }
+        description: { type: string }
+        assigneeIds: { type: array, items: { type: string, format: uuid } }
+        dueAt: { type: string, format: date-time }
+        priority: { type: string, enum: [Low,Medium,High,Urgent] }
+        labels: { type: array, items: { type: string } }
+    CreateComment: { type: object, properties: { taskId: { type: string, format: uuid }, body: { type: string }, parentCommentId: { type: string, format: uuid } }, required: [taskId, body] }
+    MarkRead: { type: object, properties: { ids: { type: array, items: { type: string, format: uuid } } }, required: [ids] }
+    Org: { type: object, properties: { id: { type: string, format: uuid }, name: { type: string }, plan: { type: string } } }
+    Project: { type: object, properties: { id: { type: string, format: uuid }, orgId: { type: string, format: uuid }, name: { type: string }, key: { type: string } } }
+    BoardColumn: { type: object, properties: { id: { type: string, format: uuid }, name: { type: string }, order: { type: integer } } }
+    Task:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        columnId: { type: string, format: uuid }
+        title: { type: string }
+        description: { type: string }
+        priority: { type: string }
+        status: { type: string }
+        dueAt: { type: string, format: date-time, nullable: true }
+    Comment: { type: object, properties: { id: { type: string, format: uuid }, taskId: { type: string, format: uuid }, authorId: { type: string, format: uuid }, body: { type: string } } }
+    Notification: { type: object, properties: { id: { type: string, format: uuid }, type: { type: string }, payload: { type: object }, readAt: { type: string, format: date-time, nullable: true } } }
+    Metrics: { type: object, properties: { activeUsers: { type: integer }, tasksCreated: { type: integer }, tasksCompleted: { type: integer }, cycleTimeDays: { type: number }, wip: { type: integer }, retention: { type: number } } }
+    Subscription: { type: object, properties: { orgId: { type: string, format: uuid }, plan: { type: string }, status: { type: string }, currentPeriodEnd: { type: string, format: date-time } } }
+    Attachment: { type: object, properties: { id: { type: string, format: uuid }, taskId: { type: string, format: uuid }, url: { type: string }, mime: { type: string }, size: { type: integer } } } 
