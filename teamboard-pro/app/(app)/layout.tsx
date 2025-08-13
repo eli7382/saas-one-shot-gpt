@@ -1,4 +1,4 @@
-import "../(app)/globals.css";
+import "@/styles/globals.css";
 import { ReactNode } from "react";
 import Link from "next/link";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";

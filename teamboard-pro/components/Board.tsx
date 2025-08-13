@@ -6,6 +6,12 @@ import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { io, Socket } from "socket.io-client";
 
 type Task = { id: string; title: string; order: number; columnId: string; projectId: string };
+const DEFAULT_COLS = [
+  { id: "backlog", name: "Backlog" },
+  { id: "in_progress", name: "In Progress" },
+  { id: "review", name: "Review" },
+  { id: "done", name: "Done" }
+];
 
 export default function Board({ projectId }: { projectId: string }) {
   const [columns, setColumns] = useState<{ id: string; name: string }[]>([]);
@@ -13,26 +19,39 @@ export default function Board({ projectId }: { projectId: string }) {
   const sensors = useSensors(useSensor(PointerSensor));
 
   useEffect(() => {
-    fetch(`/api/projects/${projectId}/columns`).then(r => r.json()).then(d => setColumns(d.data));
-    fetch(`/api/tasks?projectId=${projectId}`).then(r=>r.json()).then(d => {
-      const byCol: Record<string, Task[]> = {};
-      for (const t of d.data as Task[]) {
-        byCol[t.columnId] ??= [];
-        byCol[t.columnId].push(t);
+    (async () => {
+      try {
+        const r = await fetch(`/api/projects/${projectId}/columns`);
+        const d = await r.json();
+        if (d?.ok && Array.isArray(d.data) && d.data.length) setColumns(d.data);
+        else setColumns(DEFAULT_COLS);
+      } catch {
+        setColumns(DEFAULT_COLS);
       }
-      Object.values(byCol).forEach(list => list.sort((a,b)=>a.order-b.order));
-      setTasks(byCol);
-    });
+      try {
+        const r2 = await fetch(`/api/tasks?projectId=${projectId}`);
+        const d2 = await r2.json();
+        const byCol: Record<string, Task[]> = {};
+        for (const t of (d2.data ?? []) as Task[]) {
+          byCol[t.columnId] ??= [];
+          byCol[t.columnId].push(t);
+        }
+        Object.values(byCol).forEach(list => list.sort((a,b)=>a.order-b.order));
+        setTasks(byCol);
+      } catch {
+        setTasks({});
+      }
+    })();
     const s: Socket = io({ path: "/socket", transports: ["websocket"], forceNew: false, autoConnect: true, auth: {} , withCredentials: true });
     const ns = io(`/ws/${projectId}`, { path: "/socket" });
     ns.emit("join:project", projectId);
-    ns.on("task.updated", (_evt) => {
+    ns.on("task.updated", () => {
       fetch(`/api/tasks?projectId=${projectId}`).then(r=>r.json()).then(d => {
         const byCol: Record<string, Task[]> = {};
-        for (const t of d.data as Task[]) { byCol[t.columnId] ??= []; byCol[t.columnId].push(t); }
+        for (const t of (d.data ?? []) as Task[]) { byCol[t.columnId] ??= []; byCol[t.columnId].push(t); }
         Object.values(byCol).forEach(list => list.sort((a,b)=>a.order-b.order));
         setTasks(byCol);
-      });
+      }).catch(()=>{});
     });
     return () => { ns.close(); s.close(); };
   }, [projectId]);
@@ -47,7 +66,9 @@ export default function Board({ projectId }: { projectId: string }) {
     const newIndex = list.findIndex(t => t.id === over.id);
     const newList = arrayMove(list, oldIndex, newIndex).map((t, i) => ({ ...t, order: i }));
     setTasks({ ...tasks, [colId]: newList });
-    await fetch("/api/tasks/bulk", { method: "POST", body: JSON.stringify({ moves: newList.map((t) => ({ taskId: t.id, columnId: t.columnId, order: t.order })) }), headers: { "Content-Type": "application/json" } });
+    try {
+      await fetch("/api/tasks/bulk", { method: "POST", body: JSON.stringify({ moves: newList.map((t) => ({ taskId: t.id, columnId: t.columnId, order: t.order })) }), headers: { "Content-Type": "application/json" } });
+    } catch {}
   }
 
   return (
